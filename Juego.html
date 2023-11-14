@@ -1,0 +1,1703 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Textura 2D en WebGL 2.0</title>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f0f0;
+      margin: 0;
+      padding: 0;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    #webglcanvas {
+      display: block;
+      margin: 0 auto;
+      border: 1px solid #000;
+    }
+
+    /* Estilos para el elemento de vidas */
+    #vidas {
+      text-align: center;
+      font-size: 20px;
+      margin-top: 20px;
+      background-color: #333;
+      color: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Estilos para el botón "Reiniciar" */
+    #reiniciar {
+      display: block;
+      margin: 20px auto;
+      background-color: #3498db;
+      color: #fff;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    #reiniciar:hover {
+      background-color: #1e87d7;
+    }
+  </style>
+</head>
+<body>
+    <h2>Textura 2D en WebGL 2.0</h2>
+    <button id="reiniciar">Reiniciar</button>
+    <canvas id="webglcanvas" style="border: none;" width="500" height="500"></canvas>
+    <div id="vidas">Vidas: 3</div>
+      <img src="fondo1.png" id="fondo" hidden />
+      <img src="barriles.png" id="barriles" hidden />
+      <img src="imagen3.png" id="imagen1" hidden />
+      <img src="agarra.png" id="agarra" hidden />
+      <img src="donkeykongagarrandobarril.png" id="sosteniendo" hidden />
+      <img src="donkeykongbotando.png" id="botando" hidden />
+      <img src="barrilRodando.png" id="barrilRodando" hidden />
+      <img src="explosion.png" id="explosion" hidden />
+      <!--SPRITE JUMPMAN-->
+      <img src="jumpman.png" id="mario" hidden />
+      <img src="pauline.png" id="pauline" hidden />
+      <img src="gameover.png" id="end" hidden />
+      <img src="win.png" id="win" hidden />
+      
+      <!--
+        /***************************************************************************/
+        /* Se definen los códigos shaders.                                         */
+        /***************************************************************************/
+      -->
+      <script id="vs" type="vertex">
+        #version 300 es
+        precision mediump float;
+        uniform mat4 uMatrizProyeccion;
+        uniform mat4 uMatrizVista;
+        uniform mat4 uMatrizModelo;
+        uniform mat4 uMatrizTextura;
+        layout(location = 0) in vec2 aVertices;
+        layout(location = 1) in vec2 aCoordenadasDeTextura;
+        out vec2 vCoordenadasDeTextura;
+        void main() {
+            vCoordenadasDeTextura = (uMatrizTextura * vec4(aCoordenadasDeTextura, 0.0,1.0)).xy;  
+            gl_Position = uMatrizProyeccion * uMatrizVista * uMatrizModelo * vec4(aVertices, 0.0, 1.0);
+        }
+      </script>
+
+      <script id="fs" type="fragment">
+        #version 300 es
+        precision mediump float;
+        uniform sampler2D uUnidadDeTextura;
+        in vec2 vCoordenadasDeTextura;
+        out vec4 color;
+        void main() {
+            color = texture(uUnidadDeTextura, vCoordenadasDeTextura); 
+        }
+      </script>
+	
+      <script>
+        'use strict';
+        //NUMERO DE VIDA
+        var vidas=3;
+        /* Variables globales */
+        var gl;
+        var canvas;   
+        var programaID;
+        var textura1, textura2, texturabarriles, texturaBarrilesRodando, texturaExplosion, texturaMario;
+        var texturaAgarrando, texturaSosteniendo, texturaBotando;
+        var texturaPauline, texturaend, texturawin;
+        var codigoDeTextura1, codigoDeTextura2, codigoDeTexturaBarriles, codigoDeTexturaMario;
+        var codigoDeTexturaAgarrando, codigoDeTexturaSosteniendo, codigoDeTexturaBotando, codigoDeTexturaBarrilesRodando, codigoDeTexturaExplosion;
+        var codigoDeTexturaPauline, codigoDeTexturaend, codigoDeTexturawin;
+        /* Variables Uniformes */
+        var uMatrizProyeccion;
+        var uMatrizVista;
+        var uMatrizModelo;
+        var uUnidadDeTextura;
+        var uMatrizTextura;
+
+        /* Matrices */
+        var MatrizProyeccion = new Array(16);
+        var MatrizVista = new Array(16);
+        var MatrizModelo = new Array(16);
+        var MatrizTextura = new Array(16);
+        const ANCHO = 500;
+        const ALTO = 500;
+
+        /***************************************************************************/
+        /* Se crean, compilan y enlazan los programas Shader                       */
+        /***************************************************************************/
+        function compilaEnlazaLosShaders() {
+
+          /* Se compila el shader de vertice */
+          var shaderDeVertice = gl.createShader(gl.VERTEX_SHADER);
+          gl.shaderSource(shaderDeVertice, document.getElementById("vs").text.trim());
+          gl.compileShader(shaderDeVertice);
+          if (!gl.getShaderParameter(shaderDeVertice, gl.COMPILE_STATUS)) {
+             console.error(gl.getShaderInfoLog(shaderDeVertice));
+          }
+
+          /* Se compila el shader de fragmento */
+          var shaderDeFragmento = gl.createShader(gl.FRAGMENT_SHADER);
+          gl.shaderSource(shaderDeFragmento, document.getElementById("fs").text.trim());
+          gl.compileShader(shaderDeFragmento);
+          if (!gl.getShaderParameter(shaderDeFragmento, gl.COMPILE_STATUS)) {
+             console.error(gl.getShaderInfoLog(shaderDeFragmento));
+          }
+
+          /* Se enlaza ambos shader */
+          programaID = gl.createProgram();
+          gl.attachShader(programaID, shaderDeVertice); 
+          gl.attachShader(programaID, shaderDeFragmento);
+          gl.linkProgram(programaID);
+          if (!gl.getProgramParameter(programaID, gl.LINK_STATUS)) {
+             console.error(gl.getProgramInfoLog(programaID));
+          }
+        }
+
+        /***************************************************************************/
+        /* Transformaciones mediante matrices                                      */
+        /***************************************************************************/
+
+        /* Convierte de grados a radianes */
+        function toRadians(grados) {
+          return grados * Math.PI / 180;
+        };
+
+        /* Matriz Identidad */
+        function identidad(r) {
+          r[0] = 1; r[4] = 0; r[ 8] = 0; r[12] = 0;
+          r[1] = 0; r[5] = 1; r[ 9] = 0; r[13] = 0;
+          r[2] = 0; r[6] = 0; r[10] = 1; r[14] = 0;
+          r[3] = 0; r[7] = 0; r[11] = 0; r[15] = 1;
+        }
+
+        /* Traslación - glTranslatef */
+        function traslacion(matriz, tx, ty, tz) {
+          var r = new Array(16);
+          r[0] = 1; r[4] = 0; r[ 8] = 0; r[12] = tx;
+          r[1] = 0; r[5] = 1; r[ 9] = 0; r[13] = ty;
+          r[2] = 0; r[6] = 0; r[10] = 1; r[14] = tz;
+          r[3] = 0; r[7] = 0; r[11] = 0; r[15] =  1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Escalación - glScalef */
+        function escalacion(matriz, sx, sy, sz) { 
+          var r = new Array(16);
+          r[0] = sx; r[4] =  0; r[ 8] =  0; r[12] =  0;
+          r[1] =  0; r[5] = sy; r[ 9] =  0; r[13] =  0;
+          r[2] =  0; r[6] =  0; r[10] = sz; r[14] =  0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] =  1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Rotación sobre X - glRotatef */
+        function rotacionX(matriz, theta){
+          let r = new Array(16);
+          var c = Math.cos(toRadians(theta));
+          var s = Math.sin(toRadians(theta));
+          r[0] =  1; r[4] =  0; r[ 8] =  0; r[12] = 0;
+          r[1] =  0; r[5] =  c; r[ 9] = -s; r[13] = 0;
+          r[2] =  0; r[6] =  s; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r); 
+        }
+
+        /* Rotación sobre Y - glRotatef */
+        function rotacionY(matriz, theta){
+          let r = new Array(16);
+          var c = Math.cos(toRadians(theta));
+          var s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] =  0; r[ 8] =  s; r[12] = 0;
+          r[1] =  0; r[5] =  1; r[ 9] =  0; r[13] = 0;
+          r[2] = -s; r[6] =  0; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+	
+        /* Rotación sobre Z - glRotatef */
+        function rotacionZ(matriz, theta){
+          let r = new Array(16);
+          var c = Math.cos(toRadians(theta));
+          var s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] = -s; r[ 8] =  0; r[12] = 0;
+          r[1] =  s; r[5] =  c; r[ 9] =  0; r[13] = 0;
+          r[2] =  0; r[6] =  0; r[10] =  1; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Proyección Paralela - glOrtho */
+        function ortho(r, izq, der, abj, arr, cerca, lejos) {
+          r[0] = 2/(der - izq); r[4] =             0; r[ 8] =                  0; r[12] =         -(der + izq)/(der - izq);
+          r[1] =             0; r[5] = 2/(arr - abj); r[ 9] =                  0; r[13] =         -(arr + abj)/(arr - abj);
+          r[2] =             0; r[6] =             0; r[10] = -2/(lejos - cerca); r[14] = -(lejos + cerca)/(lejos - cerca);
+          r[3] =             0; r[7] =             0; r[11] =                  0; r[15] =                                1;
+        }
+
+        /* Proyección Perspectiva - glFrustum */
+        function frustum(r, izq, der, abj, arr, cerca, lejos) {
+          r[0] = 2*cerca/(der-izq); r[4] =                 0; r[ 8] =          (der+izq)/(der-izq); r[12] =                            0;
+          r[1] =                 0; r[5] = 2*cerca/(arr-abj); r[ 9] =          (arr+abj)/(arr-abj); r[13] =                            0;
+          r[2] =                 0; r[6] =                 0; r[10] = -(lejos+cerca)/(lejos-cerca); r[14] = -2*lejos*cerca/(lejos-cerca);
+          r[3] =                 0; r[7] =                 0; r[11] =                           -1; r[15] =                            0;
+        }
+
+        /* Proyección Perspectiva - gluPerspective */
+        function perspective(r, fovy, aspecto, cerca, lejos) {
+          var ang = fovy * 0.5;
+          var f = (Math.abs(Math.sin(toRadians(ang))) < 1e-8 ? 0 : 1) / Math.tan(toRadians(ang));
+          r[0] = f/aspecto; r[4] = 0; r[ 8] =                                  0; r[12] =                                       0;
+          r[1] =         0; r[5] = f; r[ 9] =                                  0; r[13] =                                       0;
+          r[2] =         0; r[6] = 0; r[10] = -(lejos + cerca) / (lejos - cerca); r[14] =  -2.0 * lejos * cerca / (lejos - cerca);
+          r[3] =         0; r[7] = 0; r[11] =                              - 1.0; r[15] =                                       0;
+        }
+
+        /* Multiplicación de matrices de 4 x 4 */
+        function multiplica(c, a, b) {
+          let r = new Array(16);
+          let i, j, k;
+          for (i = 0; i < 4; i++){
+            for (j = 0; j < 4; j++){
+              let s = 0;
+              for (k = 0; k < 4; k++)
+                s = s + a[i + k * 4] * b[k + j * 4];
+                r[i + j * 4] = s;
+              }
+            }
+          for (i = 0; i < 16; i++)
+            c[i] = r[i];
+        }
+
+        /***********************************************************************************/
+        /* Se define la geometría y se almacenan en los buffers de memoria y se renderiza. */
+        /***********************************************************************************/
+        class Rectangulo {
+
+          /**
+           *       vertices            coord_textura
+           *   x1,y2      x2,y2      u1,v2       u2,v2
+           *      ----------            ---------- 
+           *     |        / |          |        / | 
+           *     |      /   |          |      /   | 
+           *     |    /     |          |    /     |
+           *     | /        |          | /        |
+           *      ----------            ---------- 
+           *   x1,y1      x2,y1      u1,v1       u2,v1
+           */
+          constructor(gl,u,v) {
+
+            /* Coordenadas cartesianas (x, y) */
+            var vertices = [
+              -5, -5, // 0
+               5, -5, // 1
+               5,  5, // 2
+              -5,  5, // 3
+            ];
+
+            /* Coordenadas de textura (u, v) */
+            var coord_textura = [
+               0, 0, // 0
+               u, 0, // 1
+               u, v, // 2
+               0, v, // 3
+            ];
+
+            /* Se crea el objeto del arreglo de vértices (VAO) */
+            this.rectanguloVAO = gl.createVertexArray();
+
+            /* Se activa el objeto */
+            gl.bindVertexArray(this.rectanguloVAO);
+
+
+            /* Se genera un nombre (código) para el buffer */ 
+            var codigoVertices = gl.createBuffer();
+
+            /* Se asigna un nombre (código) al buffer */
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoVertices);
+         
+            /* Se transfiere los datos desde la memoria nativa al buffer de la GPU */
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            /* Se habilita el arreglo de los vértices (indice = 0) */
+            gl.enableVertexAttribArray(0);
+
+            /* Se especifica los atributos del arreglo de vértices */
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+
+            /* Se genera un nombre (código) para el buffer */ 
+            var codigoCoordenadasDeTextura = gl.createBuffer();
+
+            /* Se asigna un nombre (código) al buffer */
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoCoordenadasDeTextura);
+
+            /* Se transfiere los datos desde la memoria nativa al buffer de la GPU */
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(coord_textura), gl.STATIC_DRAW);
+
+            /* Se habilita el arreglo de las coordenadas de textura (indice = 1) */
+            gl.enableVertexAttribArray(1);
+
+            /* Se especifica el arreglo de las coordenadas de textura */
+            gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+
+
+            /* Se desactiva el objeto del arreglo de vértices */
+            gl.bindVertexArray(null);
+
+            /* Se deja de asignar un nombre (código) al buffer */
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+          }
+
+          muestra(gl) {
+
+            /* Se activa el objeto del arreglo de vértices */
+            gl.bindVertexArray(this.rectanguloVAO);
+
+            /* Renderiza las primitivas desde los datos de los arreglos (vértices,
+             * coordenadas de textura) */
+            gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+
+            /* Se desactiva el objeto del arreglo de vértices */
+            gl.bindVertexArray(null);
+          }
+
+        }
+
+        /***************************************************************************/
+        /* Lee la Textura                                                          */
+        /***************************************************************************/
+        function leeLaTextura(gl, ID_del_archivo, codigoDeTextura) {
+
+          /* Se asigna un nombre (código) a la textura */
+          gl.bindTexture(gl.TEXTURE_2D, codigoDeTextura);
+
+          /* true, invierte los píxeles en el orden de abajo hacia arriba que WebGL espera */
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+          /* Obtiene la imagen */
+          var imagen = document.getElementById(ID_del_archivo);
+
+          /* Se lee la textura */
+          /* |  tipo   |0=1 resol|RGB/RGBA |orden col|tip datos| buffer  | */
+          /* |    1    |    2    |    3    |    4    |    5    |    6    | */	    
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imagen);
+
+          /* Para que el patrón de textura se agrande y se acomode a una área grande */
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+          /* Para que el patrón de textura se reduzca y se acomode a una área pequeña */
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+
+          /* Para repetir la textura tanto en s y t fuera del rango del 0 al 1
+            * POR DEFECTO! */
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+          /* Para limitar la textura tanto de s y t dentro del rango del 0 al 1 */
+          //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+          /* Se deja de asignar un nombre (código) a la textura */
+          gl.bindTexture(gl.TEXTURE_2D, null);
+
+        }
+        //Mouse
+        function mouseDown(event) {
+          //console.log(tableroMat);
+         
+          var posx = new Number();
+          var posy = new Number();
+
+          
+        posx = event.x;
+        posy = event.y;
+          
+
+          
+          /* En coordenadas del OpenGL */
+          posx = ((posx / ANCHO) * 5);
+          posy = ((1- posy / ALTO) * 5);
+
+          console.log(posx+"********"+posy);
+          
+         
+        }
+
+        /***************************************************************************/
+        /* Se renderizan todos los objetos                                         */
+        /***************************************************************************/
+        //var tx = -5;
+        var parametroDK=1;
+        var tiempoUltimaActualizacion = 0;
+        var tiempoIntervalo = 3000; // 3 segundos
+        //PARA MARIO
+        var tMario=14;
+        var fMario=6;
+        //para recorridos parametros
+        var a1=0.55;
+        var b1=-0.04;
+        var x1=-2;
+        var y1=3.6;
+        var tx1=0;
+        //*
+        var a2=-0.55;
+        var b2=-0.042;
+        var x2=4.468000000000005;
+        var y2=2.25;
+        //*
+        var a3=0.55;
+        var b3=-0.038;
+        var x3=-4;
+        var y3=0.7;
+
+        //*
+        var a4=-0.55;
+        var b4=-0.04;
+        var x4=4;
+        var y4=-1.05;
+        //*
+        var a5=0.55;
+        var b5=-0.04;
+        var x5=-4;
+        var y5=-2.50;
+        //*
+        var a6=-0.55;
+        var b6=-0.04;
+        var x6=4;
+        var y6=-4;
+        
+       //posiciones de los barriles
+       var control=true;
+       var aumento =[];
+       var fila =[];
+       var camino =[];
+       var bajada=[];
+       var xv=[];
+       var yv=[];
+       var yauxv=[];
+       var du;
+       var dv=0;
+        function dibuja(tiempo) {
+ 
+          if(vidas>0){
+            if(fMario!=0){
+              // Calcula el tiempo transcurrido desde la última actualización
+                  var tiempoTranscurrido = tiempo - tiempoUltimaActualizacion;
+                  if (parametroDK >= 0 && parametroDK < 1) {
+                    tiempoIntervalo = 3000; // 3 segundos para valores entre 0 y 1
+                  } else {
+                    tiempoIntervalo = 1000; // 1 segundo para otros valores (1, 2, 3)
+                  }
+
+                if (tiempoTranscurrido >= tiempoIntervalo) {
+                  // Cambia el parámetro cuando haya transcurrido el tiempoIntervalo
+                  parametroDK = (parametroDK + 1) % 4; // Cambia entre 0, 1, 2 y 3
+
+                  // Actualiza el tiempo de la última actualización
+                  tiempoUltimaActualizacion = tiempo;
+                }
+                /* Inicializa el buffer de color */
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                /* Matriz del Modelo */
+                identidad(MatrizModelo);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                gl.activeTexture(gl.TEXTURE0);
+
+                identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                /* Se vincula uUnidadDeTextura a la unidad de textura 0 */
+                gl.uniform1i(uUnidadDeTextura, 0);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTextura1);
+                textura1.muestra(gl);
+                /*
+                  PAULINE
+
+                */
+              
+                identidad(MatrizModelo);
+                  traslacion(MatrizModelo,-0.5,4.8,0);
+                  escalacion(MatrizModelo,0.08,0.08,1);
+                  gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                  identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                  gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaPauline);
+                  texturaPauline.muestra(gl);
+                //*******************************
+                  //BARRILES
+                  identidad(MatrizModelo);
+                  traslacion(MatrizModelo,-4.4,4,0);
+                  escalacion(MatrizModelo,0.12,0.12,1);
+                  gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                  identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                  gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaBarriles);
+                  texturabarriles.muestra(gl);
+                  //***//
+                  //Barriles rodando
+                  
+                  //***
+                //console.log(parametroDK);
+              //MONO***************
+            
+            if(parametroDK==1){
+              control=true;
+              identidad(MatrizModelo);
+                traslacion(MatrizModelo,-3.2,4.2,0);
+                escalacion(MatrizModelo,0.16,0.16,1);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTextura2);
+                textura2.muestra(gl);
+              }else if(parametroDK==3){
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo,-3.2,4.2,0);
+                escalacion(MatrizModelo,0.13,0.13,1);
+                
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaSosteniendo);
+                texturaSosteniendo.muestra(gl);
+              }else if(parametroDK==2){
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo,-3.2,4.2,0);
+                escalacion(MatrizModelo,0.13,0.13,1);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaAgarrando);
+                texturaAgarrando.muestra(gl);
+              }else if(parametroDK==0){
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo,-3.2,4.2,0);
+                escalacion(MatrizModelo,0.13,0.13,1);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                identidad(MatrizTextura);
+                  gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaBotando);
+
+                texturaBotando.muestra(gl);
+                if(control){
+                  aumento.push(0);
+                  fila.push(1);
+                  camino.push(Math.floor(Math.random() * 3));
+                  bajada.push(false);
+                }
+                
+                control=false;
+                
+                
+                
+              }
+              for(var i=0; i<aumento.length; i++){
+                  barrilArrojado(aumento[i],fila[i],i, camino[i],bajada[i]);
+                  
+              }
+              if(colisionBJ()){
+                fallaudioElement.play();
+                vidas--;
+                reiniciar();
+              }
+              //dibujamos a mario
+              if(!salta){
+                  if(movement){
+                    if(!marioSube){
+                      if(fMario==6){
+                        xm=x6+(a6*tMario);   
+                        ym=y6+(b6*tMario)+0.2;            
+                      }
+                      if(fMario==5){
+                        xm=x5+(a5*tMario);   
+                        ym=y5+(b5*tMario)+0.2;     
+                              
+                      }if(fMario==4){
+                        xm=x4+(a4*tMario);   
+                        ym=y4+(b4*tMario)+0.2;     
+                              
+                      }if(fMario==3){
+                        xm=x3+(a3*tMario);   
+                        ym=y3+(b3*tMario);     
+                              
+                      }if(fMario==2){
+                        xm=x2+(a2*tMario);   
+                        ym=y2+(b2*tMario)+0.2;     
+                              
+                      }if(fMario==1){
+                        xm=x1+(a1*tMario);   
+                        ym=y1+(b1*tMario)+0.2;     
+                              
+                      }if(fMario==0){
+                        console.log("GANO"); 
+                        
+                              
+                      }
+                      if(direccion){
+                      
+                        identidad(MatrizModelo);
+                        traslacion(MatrizModelo,xm,ym,0);
+                        escalacion(MatrizModelo,0.08,0.08,1);
+                        gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                        //sprites
+                        /* Matriz del Modelo */
+                        identidad(MatrizTextura);
+                        traslacion(MatrizTextura,du,1/2,0);
+                        // Se envia la Matriz del Modelo al shader
+                        gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                        gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaMario);
+                        texturaMario.muestra(gl);
+                      }else{
+                        
+                        identidad(MatrizModelo);
+                        traslacion(MatrizModelo,xm,ym,0);
+                        escalacion(MatrizModelo,0.08,0.08,1);
+                        gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                        //sprites
+                        /* Matriz del Modelo */
+                        identidad(MatrizTextura);
+                        traslacion(MatrizTextura,du,1/2,0);
+                        // Se envia la Matriz del Modelo al shader
+                        gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+
+                        gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaMario);
+                        texturaMario.muestra(gl);
+                      }
+                      
+            
+                    }
+                    else{
+                      //sube
+                      identidad(MatrizModelo);
+                      traslacion(MatrizModelo,xm,ym,0);
+                      escalacion(MatrizModelo,0.08,0.08,1);
+                      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                      identidad(MatrizTextura);
+                      traslacion(MatrizTextura,du,0,0);
+                      gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                      gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaMario);
+                      texturaMario.muestra(gl);
+                      
+                    }
+                  }else{
+                    if(fMario==6){
+                        xm=x6+(a6*tMario);   
+                        ym=y6+(b6*tMario)+0.2;            
+                      }
+                      if(fMario==5){
+                        xm=x5+(a5*tMario);   
+                        ym=y5+(b5*tMario)+0.2;     
+                              
+                      }if(fMario==4){
+                        xm=x4+(a4*tMario);   
+                        ym=y4+(b4*tMario)+0.2;     
+                              
+                      }if(fMario==3){
+                        xm=x3+(a3*tMario);   
+                        ym=y3+(b3*tMario);     
+                              
+                      }if(fMario==2){
+                        xm=x2+(a2*tMario);   
+                        ym=y2+(b2*tMario)+0.2;     
+                              
+                      }if(fMario==1){
+                        xm=x1+(a1*tMario);   
+                        ym=y1+(b1*tMario)+0.2;     
+                              
+                      }if(fMario==0){
+                        console.log("GANO");    
+                              
+                      }
+                      identidad(MatrizModelo);
+                      traslacion(MatrizModelo,xm,ym,0);
+                      escalacion(MatrizModelo,0.08,0.08,1);
+                      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                      identidad(MatrizTextura);
+                      if(direccion){
+                        traslacion(MatrizTextura,7/8,1/2,0);
+                      }else{
+                        traslacion(MatrizTextura,0/8,1/2,0);
+                      }
+                      
+                      gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                      gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaMario);
+                      texturaMario.muestra(gl);
+                  }
+                }else{
+              
+                      var sxt = sax;
+                      var syt = say + 4  * st - (0.5 * 9.81 * st * st);
+                      identidad(MatrizModelo);
+                      traslacion(MatrizModelo,sxt,syt,0);
+                      escalacion(MatrizModelo,0.08,0.08,1);
+                      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                      identidad(MatrizTextura);
+                      if(direccion){
+                        traslacion(MatrizTextura,4/8,1/2,0);
+                      }else{
+                        traslacion(MatrizTextura,3/8,1/2,0);
+                      }
+
+                      gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+
+                      gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaMario);
+                      texturaMario.muestra(gl);
+                      if(syt<ym){
+                        salta=false;
+                      }
+                      st=st+0.01;
+                }
+        
+            
+                requestAnimationFrame(dibuja);
+            
+              }else{
+                console.log("GANO");
+                identidad(MatrizModelo);
+                  
+                      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                      identidad(MatrizTextura);
+                      
+
+                      gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+
+                      gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturawin);
+                      texturawin.muestra(gl);
+                requestAnimationFrame(dibuja);
+              }
+          }else{
+            identidad(MatrizModelo);
+                  
+                      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                      identidad(MatrizTextura);
+                      
+
+                      gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+
+                      gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaend);
+                      texturaend.muestra(gl);
+            endaudioElement.play();
+            requestAnimationFrame(dibuja);
+          }
+          
+
+        }
+        //Lee teclado
+        var xm,ym, yproxMario;
+        var marioSube=false;
+        var marioBaja=false;
+        var direccion=true; //true derecha 
+        var movement=false;
+        var noInputTimer;
+        document.onkeydown=function(e){
+          if(fMario==0){
+              victoriaaudioElement.play();
+
+          }
+          //no entrada controlar
+          clearTimeout(noInputTimer);
+          switch(e.keyCode){
+            
+            case 37:
+              jumpmancaminandoaudioElement.play();
+              movement=true;
+              direccion=false;
+              //alert("left");
+              if(du!=1/8){
+                du=1/8;
+              }else{
+                du=du+1/8;
+              }
+              
+              if(fMario==6 || fMario==4 || fMario==2)
+              {
+                tMario=tMario+0.2;
+              }else if(fMario==5 || fMario==3 || fMario==1){
+                tMario=tMario-0.2;
+              }
+              
+              //console.log(tMario);
+              break;
+            case 38:
+              movement=true;
+              //preguntamos la fila
+              if(fMario==6){    
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  
+                  ym=ym+0.1;
+                  if(ym>=yproxMario){
+                    marioSube=false;
+                    fMario=5;
+                    du=3/8;
+                  }
+                } 
+                if(tMario>=-0.2 && tMario<=1.01 && !marioSube){
+                  du=2/8;
+                  marioSube=true;
+                  //hallamos el y de arriba
+                  xm=x6+(a6*tMario);   
+                  ym=y6+(b6*tMario)+0.25;
+                  tMario=(xm-x5)/a5;
+                  yproxMario=y5+(b5*tMario)+0.25;
+                  ym=ym+0.1;
+                }
+                
+              }else if(fMario==5){
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym+0.1;
+                  if(ym>=yproxMario){
+                    marioSube=false;
+                    fMario=4;
+                    du=3/8;
+                  }
+                } 
+                if((tMario>=4.74 && tMario<=5.74) || (tMario>=-0.25 && tMario<=0.54) && !marioSube){
+                  marioSube=true;
+                  du=2/8;
+                  //hallamos el y de arriba
+                  xm=x5+(a5*tMario);   
+                  ym=y5+(b5*tMario)+0.25;
+                  tMario=(xm-x4)/a4;
+                  yproxMario=y4+(b4*tMario)+0.25;
+                  ym=ym+0.1;
+                }
+              }else if(fMario==4){
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym+0.1;
+                  if(ym>=yproxMario){
+                    marioSube=false;
+                    fMario=3;
+                    du=3/8;
+                  }
+                } 
+                if((tMario>=7.60 && tMario<=8.4) || (tMario>=-0.2 && tMario<=0.59) && !marioSube){
+                  marioSube=true;
+                  du=2/8;
+                  //hallamos el y de arriba
+                  xm=x4+(a4*tMario);   
+                  ym=y4+(b4*tMario);
+                  tMario=(xm-x3)/a3;
+                  yproxMario=y3+(b3*tMario);
+                  ym=ym+0.1;
+                }
+              }
+              else if(fMario==3){
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym+0.1;
+                  if(ym>=yproxMario){
+                    marioSube=false;
+                    fMario=2;
+                    du=3/8;
+                  }
+                } 
+                if((tMario>=-0.25 && tMario<=0.54) || (tMario>=2.94 && tMario<=3.54) && !marioSube){
+                  marioSube=true;
+                  du=2/8;
+                  //hallamos el y de arriba
+                  xm=x3+(a3*tMario);   
+                  ym=y3+(b3*tMario);
+                  tMario=(xm-x2)/a2;
+                  yproxMario=y2+(b2*tMario);
+                  ym=ym+0.1;
+                }
+              }else if(fMario==2){
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym+0.1;
+                  if(ym>=yproxMario){
+                    marioSube=false;
+                    fMario=1;
+                    du=3/8;
+                  }
+                } 
+                if((tMario>=-0.14 && tMario<=0.45) && !marioSube){
+                  marioSube=true;
+                  du=2/8;
+                  //hallamos el y de arriba
+                  xm=x2+(a2*tMario);   
+                  ym=y2+(b2*tMario);
+                  tMario=(xm-x1)/a1;
+                  yproxMario=y1+(b1*tMario);
+                  ym=ym+0.1;
+                }
+              }else if(fMario==1){
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym+0.1;
+                  
+                  if(ym>=4.76){
+                    
+                    marioSube=false;
+                    fMario=0;
+                    du=3/8;
+                  }
+                } 
+                if((tMario>=5.30 && tMario<=6.10) && !marioSube){
+                  marioSube=true;
+                  du=2/8;
+                  //hallamos el y de arriba
+                  xm=x1+(a1*tMario);   
+                  ym=y1+(b1*tMario);
+                  tMario=0;
+                  yproxMario=40;
+                  ym=ym+0.1;
+                }
+              }
+              
+              
+              break;
+            case 39:
+              jumpmancaminandoaudioElement.play();
+              movement=true;
+              direccion=true;
+              //alert("right");
+              if(du!=5/8){
+                du=5/8;
+              }else{
+                du=du+1/8;
+              }
+              if(fMario==6 || fMario==4 || fMario==2)
+              {
+                tMario=tMario-0.2;
+              }else if(fMario==5 || fMario==3 || fMario==1){
+                tMario=tMario+0.2;
+              }
+              //console.log(tMario);
+              break;
+            case 40:
+               movement=true;
+              if(fMario==5){  
+                
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym-0.1;
+                  if(ym<=yproxMario){
+                    marioSube=false;
+                    fMario=6;
+                  }
+                } 
+               if((tMario>=13.74 && tMario<=14.54) || (tMario>=3.74 && tMario<=4.34) && !marioSube){
+                marioSube=true;
+                  
+                  //hallamos el y de abaj
+                  xm=x5+(a5*tMario);   
+                  ym=y5+(b5*tMario)+0.25;
+                  tMario=(xm-x6)/a6;
+                  yproxMario=y6+(b6*tMario)+0.25;
+                  ym=ym-0.1;
+                }
+            
+
+              }
+              if(fMario==4){  
+                
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym-0.1;
+                  if(ym<=yproxMario){
+                    marioSube=false;
+                    fMario=5;
+                  }
+                } 
+               if((tMario>=13.74 && tMario<=14.54) || (tMario>=8.79 && tMario<=9.59) && !marioSube){
+                marioSube=true;
+                  
+                  //hallamos el y de abaj
+                  xm=x4+(a4*tMario);   
+                  ym=y4+(b4*tMario)+0.25;
+                  tMario=(xm-x5)/a5;
+                  yproxMario=y5+(b5*tMario)+0.25;
+                  ym=ym-0.1;
+                }
+                
+              }
+              if(fMario==3){  
+                
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym-0.1;
+                  if(ym<=yproxMario){
+                    marioSube=false;
+                    fMario=4;
+                  }
+                } 
+               if((tMario>=13.74 && tMario<=14.54) || (tMario>=6.14 && tMario<=6.94) || (tMario>=2.74 && tMario<=3.34) && !marioSube){
+                marioSube=true;
+                  
+                  //hallamos el y de abaj
+                  xm=x3+(a3*tMario);   
+                  ym=y3+(b3*tMario)+0.25;
+                  tMario=(xm-x4)/a4;
+                  yproxMario=y4+(b4*tMario)+0.25;
+                  ym=ym-0.1;
+                }
+                
+              }
+              if(fMario==2){  
+                
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym-0.1;
+                  if(ym<=yproxMario){
+                    marioSube=false;
+                    fMario=3;
+                  }
+                } 
+               if((tMario<=15.45 && tMario>=14.85) || (tMario>=11.85 && tMario<=12.45) || (tMario>=3.45 && tMario<=4.05) && !marioSube){
+                marioSube=true;
+                  
+                  //hallamos el y de abaj
+                  xm=x2+(a2*tMario);   
+                  ym=y2+(b2*tMario)+0.25;
+                  tMario=(xm-x3)/a3;
+                  yproxMario=y3+(b3*tMario)+0.25;
+                  ym=ym-0.1;
+                }
+                
+              }
+              if(fMario==1){  
+                
+                if(marioSube){
+                  if(du!=0/8){
+                    du=0/8;
+                  }else{
+                    du=du+1/8;
+                  }
+                  ym=ym-0.1;
+                  if(ym<=yproxMario){
+                    marioSube=false;
+                    fMario=2;
+                  }
+                } 
+               if((tMario>=11.30 && tMario<=11.90) || (tMario>=1.10 && tMario<=1.70) && !marioSube){
+                marioSube=true;
+                  
+                  //hallamos el y de abaj
+                  xm=x1+(a1*tMario);   
+                  ym=y1+(b1*tMario)+0.25;
+                  tMario=(xm-x2)/a2;
+                  yproxMario=y2+(b2*tMario)+0.25;
+                  ym=ym-0.1;
+                }
+                
+              }
+              break;
+              case 32:
+                saltoaudioElement.play();
+                if (direccion) {
+                  salta=true;
+                    sax=xm;
+                    say=ym;
+                    
+                    
+                 
+                    st=0;
+
+                } else {
+                  salta=true;
+                    sax=xm;
+                    say=ym;
+                    
+                    
+                 
+                    st=0;
+
+                }
+                break;
+          }
+          noInputTimer = setTimeout(function() {
+            if(!marioSube)
+               movement=false;
+            // Realiza acciones adicionales si no se recibe entrada durante 5 segundos
+          }, 1000); // 5000 milisegundos = 5 segundos
+        }
+
+        var salta=false;
+        var sax, say;
+        var sbx, sby;
+        var st;
+        var sc;
+        var auxparaY;
+        //para rotacion
+        var rot=0;
+        
+        function barrilArrojado(aum,f, indice, cam, baja){
+          
+          
+          if(!baja){
+            if(f===1){
+              var xx=x1;
+              var yy=y1;
+              var aa=a1;
+              var bb=b1;
+            }else if(f==2){
+              var xx=x2;
+              var yy=y2;
+              var aa=a2;
+              var bb=b2;
+            }
+            else if(f==3){
+              var xx=x3;
+              var yy=y3;
+              var aa=a3;
+              var bb=b3;
+            }
+            else if(f==4){
+              var xx=x4;
+              var yy=y4;
+              var aa=a4;
+              var bb=b4;
+            }
+            else if(f==5){
+              var xx=x5;
+              var yy=y5;
+              var aa=a5;
+              var bb=b5;
+            }
+            else if(f==6){
+              var xx=x6;
+              var yy=y6;
+              var aa=a6;
+              var bb=b6;
+            }
+            xv[indice]=xx+(aa*aum);
+            yv[indice]=yy+(bb*aum);
+            var x=xv[indice];
+            var y=yv[indice];
+            var yaux;
+            identidad(MatrizModelo);
+            traslacion(MatrizModelo,x,y,0);
+            escalacion(MatrizModelo,0.08,0.08,1);
+            rotacionZ(MatrizModelo,rot+3);
+            rot=rot+3;
+            gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+            identidad(MatrizTextura);
+            gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+            gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaBarrilesRodando);
+            texturaBarrilesRodando.muestra(gl);
+            aum=aum+0.06;
+            aumento[indice]=aum;
+            
+            if(aum>=11.8 && f==1 && (cam==1 ||cam==2)){
+              //conocemos x
+              aumento[indice]=(x-x2)/a2;
+              //hallamos y final
+              yaux=y2+(b2*aumento[indice]);
+              baja=true;
+              
+            }else if(aum>=1.5 && f==1 && (cam==0)){
+              aumento[indice]=(x-x2)/a2;
+              //hallamos y final
+              yaux=y2+(b2*aumento[indice]);
+              baja=true;
+            }
+            
+            if(aum>=15.5 && f==2 && (cam==2)){
+              aumento[indice]=(x-x3)/a3;
+              //hallamos y final
+              yaux=y3+(b3*aumento[indice]);
+              baja=true;
+            }
+            else if(aum>=12 && f==2 && (cam==1)){
+
+              aumento[indice]=(x-x3)/a3;
+              //hallamos y final
+              yaux=y3+(b3*aumento[indice]);
+              baja=true;
+            }else if(aum>=4 && f==2 && (cam==0)){
+              aumento[indice]=(x-x3)/a3;
+              
+              //hallamos y final
+              yaux=y3+(b3*aumento[indice]);
+              baja=true;
+            }
+            
+           
+            if(aum>=14.5 && f==3 && cam==2){
+           
+              aumento[indice]=(x-x4)/a4;
+              //hallamos y final
+              yaux=y4+(b4*aumento[indice]);
+              baja=true;
+              
+              
+            }else if(aum>=6.75 && f==3 && cam==1){
+              aumento[indice]=(x-x4)/a4;
+              //hallamos y final
+              yaux=y4+(b4*aumento[indice]);
+              baja=true;
+            }else if(aum>=3.5 && f==3 && cam==0){
+              aumento[indice]=(x-x4)/a4;
+              //hallamos y final
+              yaux=y4+(b4*aumento[indice]);
+              baja=true;
+              
+            }
+
+            if(aum>=9 && f==4 && (cam==0 || cam==1)){
+              aumento[indice]=(x-x5)/a5;
+              //hallamos y final
+              yaux=y5+(b5*aumento[indice]);
+              baja=true;
+            }else if(aum>=14.5 && f==4 && (cam==2)){
+              aumento[indice]=(x-x5)/a5;
+              //hallamos y final
+              yaux=y5+(b5*aumento[indice]);
+              baja=true;
+            }
+              if(aum>=14.5 && f==5 && cam==1){
+                aumento[indice]=(x-x6)/a6;
+                //hallamos y final
+                yaux=y6+(b6*aumento[indice]);
+                baja=true;
+                
+              }else if(aum>=3.9 && f==5 && cam==0){
+                aumento[indice]=(x-x6)/a6;
+                  //hallamos y final
+                  yaux=y6+(b6*aumento[indice]);
+                  baja=true;
+                
+              }
+              
+              if(aum>=14.5 && f==6){
+                aumento[indice]=0;
+                fila[indice]=6;
+                aumento.splice(indice, 1);
+                fila.splice(indice, 1);
+                camino.splice(indice, 1);
+                bajada.splice(indice,1);
+                xv.splice(indice,1);
+                yv.splice(indice,1);
+                yauxv.splice(indice,1);
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo,x,y,0);
+                escalacion(MatrizModelo,0.08,0.08,1);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+                identidad(MatrizTextura);
+            gl.uniformMatrix4fv(uMatrizTextura, false, MatrizTextura);
+                gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaExplosion);
+                texturaExplosion.muestra(gl);
+              }
+
+              yauxv[indice]=yaux;
+              
+              xv[indice]=x;
+              yv[indice]=y;
+              bajada[indice]=baja;
+            }else{
+              
+              var x=xv[indice];
+              var y=yv[indice];
+              var yaux=yauxv[indice];
+              identidad(MatrizModelo);
+                  traslacion(MatrizModelo,x,y,0);
+                  escalacion(MatrizModelo,0.08,0.08,1);
+                  
+                  gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+                  gl.bindTexture(gl.TEXTURE_2D, codigoDeTexturaBarrilesRodando);
+                  texturaBarrilesRodando.muestra(gl);
+                 
+              if(f==1 && (cam==1 ||cam==2)){
+                
+                if(y<=yaux){
+                  
+                  aumento[indice]=(x-x2)/a2;
+                  fila[indice]=2;
+                 camino[indice]=Math.floor(Math.random() * 3);
+                  //camino[indice]=0;
+                  baja=false;
+                }else{
+                  y=y-0.05;
+                  
+                } 
+              }else if(f==1 && (cam==0)){
+                if(y<=yaux){
+                  aumento[indice]=(x-x2)/a2;
+                  fila[indice]=2;
+                  camino[indice]=Math.floor(Math.random() * 2)+1;
+                  //camino[indice]=0;
+                  baja=false;
+                  
+                }else{
+                  y=y-0.05;
+                  
+                } 
+                
+                
+              }
+             
+              if(f==2 && (cam==2)){
+                if(y<=yaux){
+                  aumento[indice]=(x-x3)/a3;
+                  fila[indice]=3;
+                  camino[indice]=Math.floor(Math.random() * 3);
+                  baja=false;
+                }else{
+                  y=y-0.05;
+                 
+                }
+              }
+              else if(f==2 && (cam==1)){
+                if(y<=yaux){
+                  aumento[indice]=(x-x3)/a3;
+                  fila[indice]=3;
+                  camino[indice]=Math.floor(Math.random() * 2)+1;
+                  baja=false;
+                }else{
+                  y=y-0.05;
+                  
+                }
+              }else if(f==2 && (cam==0)){
+                
+                if(y<=yaux){
+                  aumento[indice]=(x-x3)/a3;
+                  fila[indice]=3;
+                  camino[indice]=2;
+                  baja=false;
+                 
+                  
+          
+                  
+                }else{
+                  y=y-0.05;
+                  
+                }
+              }
+
+            if(f==3 && cam==2){
+              
+              if(y<=yaux){
+                
+                aumento[indice]=(x-x4)/a4;
+                fila[indice]=4;
+                camino[indice]=Math.floor(Math.random() * 3);
+                baja=false;
+              }else{
+                 
+                  
+                  y=y-0.05;
+                  
+                }
+            }else if(f==3 && cam==1){
+              if(y<=yaux){
+                aumento[indice]=(x-x4)/a4;
+                fila[indice]=4;
+                camino[indice]=Math.floor(Math.random() * 2)+1;
+                baja=false;
+              }else{
+                  y=y-0.05;
+                 
+                }
+            }else if(f==3 && cam==0){
+              if(y<=yaux){
+                aumento[indice]=(x-x4)/a4;
+                fila[indice]=4;
+                camino[indice]=2;
+                baja=false;
+              }else{
+                  y=y-0.05;
+                  
+              }
+                
+            }
+
+            if(f==4 && (cam==0 || cam==1)){
+              if(y<=yaux){
+                aumento[indice]=(x-x5)/a5;
+                fila[indice]=5;
+                camino[indice]=1;
+                baja=false;
+              }else{
+                  y=y-0.05;
+                  
+                }
+            }else if( f==4 && (cam==2)){
+              if(y<=yaux){
+                aumento[indice]=(x-x5)/a5;
+                fila[indice]=5;
+                camino[indice]=Math.floor(Math.random() * 2);
+                baja=false;
+              }else{
+                  y=y-0.05;
+                 
+                }
+            }
+              if(f==5 && cam==1){
+                if(y<=yaux){
+                  aumento[indice]=(x-x6)/a6;
+                  fila[indice]=6;
+                  baja=false;
+                }else{
+                  y=y-0.05;
+                  
+                }
+                
+              }else if(f==5 && cam==0){
+                if(y<=yaux){
+                  aumento[indice]=(x-x6)/a6;
+                  fila[indice]=6;
+                  baja=false;
+                }else{
+                  y=y-0.05;
+                  
+                }
+                
+              }
+              yauxv[indice]=yaux;
+              xv[indice]=x;
+              yv[indice]=y;
+              bajada[indice]=baja;
+            }
+            
+        }
+        
+        let identificadorIntervaloDeTiempo;
+        var audioElement = document.createElement('audio');
+        audioElement.setAttribute('src', 'inicio.mp3');
+        var victoriaaudioElement = document.createElement('audio');
+        victoriaaudioElement.setAttribute('src', 'victoria.mp3');
+        var jumpmancaminandoaudioElement = document.createElement('audio');
+        jumpmancaminandoaudioElement.setAttribute('src', 'jumpmanCaminando.mp3');
+        var saltoaudioElement = document.createElement('audio');
+        saltoaudioElement.setAttribute('src', 'salto.mp3');
+        var fallaudioElement = document.createElement('audio');
+        fallaudioElement.setAttribute('src', 'fall.mp3');
+        var endaudioElement = document.createElement('audio');
+        endaudioElement.setAttribute('src', '12 Ending.mp3');
+        function main() {
+          
+
+               
+          /* Paso 1: Se prepara el lienzo y se obtiene el contexto del WebGL.        */
+          var canvas = document.getElementById("webglcanvas");
+
+          gl = canvas.getContext("webgl2");
+          if (!gl) {
+             document.write("WebGL 2.0 no está disponible en tu navegador");
+             return;
+          }
+          
+          // Se define la ventana de despliegue
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+          canvas.addEventListener("mousedown", mouseDown, false);
+          /* Paso 2: Se crean, compilan y enlazan los programas Shader               */
+          compilaEnlazaLosShaders();
+          /*================================================================================================*/
+          /* Paso 3: Se define la geometría y se almacenan en los buffers de memoria.*/
+          textura1 = new Rectangulo(gl,1,1);
+          codigoDeTextura1 = gl.createTexture();
+          leeLaTextura(gl, "fondo", codigoDeTextura1)
+
+          textura2 = new Rectangulo(gl,1,1);
+          codigoDeTextura2 = gl.createTexture();
+          leeLaTextura(gl, "imagen1", codigoDeTextura2)
+
+          texturabarriles = new Rectangulo(gl,1,1);
+          codigoDeTexturaBarriles = gl.createTexture();
+          leeLaTextura(gl, "barriles", codigoDeTexturaBarriles)
+          
+          texturaAgarrando = new Rectangulo(gl,1,1);
+          codigoDeTexturaAgarrando = gl.createTexture();
+          leeLaTextura(gl, "agarra", codigoDeTexturaAgarrando)
+
+          texturaSosteniendo = new Rectangulo(gl,1,1);
+          codigoDeTexturaSosteniendo = gl.createTexture();
+          leeLaTextura(gl, "sosteniendo", codigoDeTexturaSosteniendo)
+
+          texturaBotando = new Rectangulo(gl,1,1);
+          codigoDeTexturaBotando = gl.createTexture();
+          leeLaTextura(gl, "botando", codigoDeTexturaBotando)
+
+          texturaBarrilesRodando = new Rectangulo(gl,1,1);
+          codigoDeTexturaBarrilesRodando = gl.createTexture();
+          leeLaTextura(gl, "barrilRodando", codigoDeTexturaBarrilesRodando)
+
+          texturaExplosion = new Rectangulo(gl,1,1);
+          codigoDeTexturaExplosion = gl.createTexture();
+          leeLaTextura(gl, "explosion", codigoDeTexturaExplosion)
+
+          texturaMario = new Rectangulo(gl,1/8,1/2);
+          codigoDeTexturaMario = gl.createTexture();
+          leeLaTextura(gl, "mario", codigoDeTexturaMario)
+
+          texturaPauline = new Rectangulo(gl,1,1);
+          codigoDeTexturaPauline = gl.createTexture();
+          leeLaTextura(gl, "pauline", codigoDeTexturaPauline)
+
+          texturaend = new Rectangulo(gl,1,1);
+          codigoDeTexturaend = gl.createTexture();
+          leeLaTextura(gl, "end", codigoDeTexturaend)
+
+          texturawin = new Rectangulo(gl,1,1);
+          codigoDeTexturawin= gl.createTexture();
+          leeLaTextura(gl, "win", codigoDeTexturawin)
+
+          
+          /* Paso 4: Se obtiene los ID de las variables de entrada de los shaders    */
+
+          // Se utiliza los shaders
+          gl.useProgram(programaID);
+
+          // Obtiene los ID de las variables de entrada de los shaders
+          uMatrizProyeccion = gl.getUniformLocation(programaID, "uMatrizProyeccion");
+          uMatrizVista = gl.getUniformLocation(programaID, "uMatrizVista");
+          uMatrizModelo = gl.getUniformLocation(programaID, "uMatrizModelo");
+          uUnidadDeTextura = gl.getUniformLocation(programaID, "uUnidadDeTextura");
+          uMatrizTextura = gl.getUniformLocation(programaID, "uMatrizTextura");
+          /* Paso 5: Se define la proyección  
+                                                */
+          // Define la Matriz de Proyección
+          ortho(MatrizProyeccion, -5, 5, -5, 5, -5, 5);
+
+          // Se envia la Matriz de Proyección al shader
+          gl.uniformMatrix4fv(uMatrizProyeccion, false, MatrizProyeccion);
+
+          /* Paso 6: Se renderizan los objetos                                       */
+
+          /* Matriz del Vista */
+          identidad(MatrizVista);
+
+          // Se envia la Matriz de Vista al shader
+          gl.uniformMatrix4fv(uMatrizVista, false, MatrizVista);
+
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+
+          // Color de fondo          
+          gl.clearColor(0.0, 0.0, 1.0, 1.0);
+          // Inicializa la primera actualización
+          tiempoUltimaActualizacion = performance.now();
+           // indicamos el archivo de audio a cargar
+          
+          // Selecciona el elemento HTML donde deseas mostrar las vidas
+          vidasElement = document.getElementById("vidas");
+          vidasElement.textContent = "Vidas: " + vidas;
+
+           
+          dibuja();
+          
+
+        }
+        var vidasElement ;
+        //reiniciar juego
+        function reiniciar() {
+          control=true;
+          aumento =[];
+          fila =[];
+          camino =[];
+          bajada=[];
+          xv=[];
+          yv=[];
+          yauxv=[];
+          dv=0;
+          tiempoUltimaActualizacion = 0;
+          tMario=14;
+         fMario=6;
+         salta=false;
+         marioSube=false;
+         movement=false;
+          // Actualiza el contenido del elemento con el valor de "vidas"
+          vidasElement.textContent = "Vidas: " + vidas;
+          
+        }
+        function reiniciarTodo() {
+          
+          control=true;
+          aumento =[];
+          fila =[];
+          camino =[];
+          bajada=[];
+          xv=[];
+          yv=[];
+          yauxv=[];
+          dv=0;
+          tiempoUltimaActualizacion = 0;
+          tMario=14;
+          fMario=6;
+          vidas=3;
+          salta=false;
+          marioSube=false;
+          movement=false;
+          // Actualiza el contenido del elemento con el valor de "vidas"
+          vidasElement.textContent = "Vidas: " + vidas;
+          
+        
+        }
+        //verifica colision entre barril y jumpman
+        function colisionBJ(){
+          for(var i=0; i<aumento.length; i++){
+            if(fila[i]==fMario){
+              
+              if(tMario<=aumento[i]+1 && tMario>=aumento[i]-1 && !salta && !marioSube){
+                
+                return true;
+              }
+            }
+          }
+          return false;
+        }
+        // Asignar la función al evento 'onclick' del botón
+        document.getElementById("reiniciar").onclick = reiniciarTodo;
+        /* Llama a main una vez que la página web se haya cargado. */
+        window.onload = main;
+
+
+      </script>
+   </body>
+</html>
